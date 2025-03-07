@@ -12,16 +12,25 @@ class HeyGenController {
     });
   }
 
-  // Create a video
-  async createVideo(req, res, next) {
-    try {
-      const response = await this.apiClient.post('/videos', req.body);
-      res.json(response.data);
-    } catch (error) {
-      logger.error('HeyGen create video error:', error);
-      next(error);
-    }
+// In heygen.controller.js
+async createVideo(req, res, next) {
+  try {
+    const { video_url, output_language, title } = req.body;
+    
+    const response = await this.apiClient.post('/v2/video_translate', {
+      video_url,
+      output_language,
+      title,
+      callback_url: `${process.env.API_URL}/webhooks/heygen`
+    });
+
+    res.json(response.data);
+  } catch (error) {
+    logger.error('HeyGen create video error:', error);
+    next(error);
   }
+}
+
 
   // Get video status
   async getVideoStatus(req, res, next) {
