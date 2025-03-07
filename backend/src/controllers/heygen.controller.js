@@ -12,7 +12,7 @@ class HeyGenController {
     });
   }
 
-
+ //translated video creation
   async createVideo(req, res, next) {
     try {
       const { video_url, output_language, title } = req.body;
@@ -73,7 +73,55 @@ class HeyGenController {
       next(error);
     }
   }
+  async createAvatarVideo(req, res, next) {
+    try {
+      const { avatar_pose_id, input_text, voice_id, title, dimension, avatar_style } = req.body;
+      
+      const response = await this.apiClient.post('/video/generate', {
+        video_inputs: [{
+          character: {
+            type: "avatar",
+            avatar_id: avatar_pose_id,
+            avatar_style: avatar_style || "normal"
+          },
+          voice: {
+            type: "text",
+            voice_id: voice_id,
+            input_text: input_text
+          }
+        }],
+        dimension: dimension || { width: 1280, height: 720 },
+        title: title
+      });
 
+      res.json(response.data);
+    } catch (error) {
+      logger.error('HeyGen create avatar video error:', error.response?.data || error.message);
+      res.status(error.response?.status || 500).json({ 
+        message: error.response?.data?.message || 'Failed to create avatar video'
+      });
+    }
+  }
+
+  async listAvatars(req, res, next) {
+    try {
+      const response = await this.apiClient.get('/avatars');
+      res.json(response.data);
+    } catch (error) {
+      logger.error('HeyGen list avatars error:', error);
+      next(error);
+    }
+  }
+
+  async listVoices(req, res, next) {
+    try {
+      const response = await this.apiClient.get('/voices');
+      res.json(response.data);
+    } catch (error) {
+      logger.error('HeyGen list voices error:', error);
+      next(error);
+    }
+  }
   // Generate text to speech
   async generateTTS(req, res, next) {
     try {
