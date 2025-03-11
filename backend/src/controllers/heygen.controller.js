@@ -17,6 +17,42 @@ class HeyGenController {
     });
   }
 
+  // Create translated video
+  async createTranslatedVideo(req, res) {
+    try {
+      const { video_url, output_language, title } = req.body;
+      
+      if (!video_url || !output_language || !title) {
+        return res.status(400).json({ 
+          message: 'Missing required fields: video_url, output_language, and title are required' 
+        });
+      }
+
+      const response = await this.apiClient.post('/v2/video_translate', {
+        video_url,
+        output_language,
+        title,
+        translate_audio_only: false,
+        enable_dynamic_duration: true,
+        callback_url: `${process.env.API_URL}/webhooks/heygen`
+      });
+
+      res.json(response.data);
+    } catch (error) {
+      logger.error('HeyGen create translated video error:', error.response?.data || error.message);
+      
+      if (error.response?.status === 404) {
+        return res.status(404).json({ 
+          message: 'The video URL could not be accessed. Please ensure it is publicly accessible.'
+        });
+      }
+      
+      res.status(error.response?.status || 500).json({ 
+        message: error.response?.data?.message || 'Failed to process video request'
+      });
+    }
+  }
+
   // List available avatars
   async listAvatars(req, res) {
     try {
@@ -43,104 +79,53 @@ class HeyGenController {
     }
   }
 
-  // List avatar groups
-  async listAvatarGroups(req, res) {
-    try {
-      const includePublic = req.query.include_public === 'true';
-      const response = await this.apiClient.get(`/v2/avatar_group.list?include_public=${includePublic}`);
-      res.json(response.data);
-    } catch (error) {
-      logger.error('HeyGen list avatar groups error:', error.response?.data || error.message);
-      res.status(error.response?.status || 500).json({
-        message: error.response?.data?.message || 'Failed to fetch avatar groups'
-      });
-    }
-  }
-
-  // List avatars in a specific group
-  async listAvatarsInGroup(req, res) {
-    try {
-      const { groupId } = req.params;
-      const response = await this.apiClient.get(`/v2/avatar_group/${groupId}/avatars`);
-      res.json(response.data);
-    } catch (error) {
-      logger.error('HeyGen list avatars in group error:', error.response?.data || error.message);
-      res.status(error.response?.status || 500).json({
-        message: error.response?.data?.message || 'Failed to fetch avatars in group'
-      });
-    }
-  }
-
   // Create avatar video
   async createAvatarVideo(req, res) {
     try {
       const { 
+        avatar_pose_id,
+        input_text,
+        voice_id,
         title,
-        caption = false,
-        callback_id,
-        video_inputs,
-        dimension,
-        folder_id,
-        callback_url
+        dimension = { width: 1280, height: 720 },
+        avatar_style = 'normal'
       } = req.body;
 
-      if (!video_inputs || !dimension) {
+      // Validate required fields
+      if (!avatar_pose_id || !input_text || !voice_id || !title) {
         return res.status(400).json({
-          message: 'Missing required fields: video_inputs and dimension are required'
+          message: 'Missing required fields: avatar_pose_id, input_text, voice_id, and title are required'
         });
       }
 
-      const response = await this.apiClient.post('/v2/video/generate', {
+      // Format the request body according to HeyGen V2 API
+      const requestBody = {
         title,
-        caption,
-        callback_id,
-        video_inputs,
-        dimension,
-        folder_id,
-        callback_url
-      });
+        video_inputs: [{
+          character: {
+            type: "avatar",
+            avatar_id: avatar_pose_id,
+            avatar_style: avatar_style
+          },
+          voice: {
+            type: "text",
+            voice_id: voice_id,
+            input_text: input_text
+          }
+        }],
+        dimension
+      };
 
-      res.json(response.data);
+      const response = await this.apiClient.post('/v2/video/generate', requestBody);
+
+      res.json({
+        ...response.data,
+        message: 'Avatar video creation started successfully'
+      });
     } catch (error) {
       logger.error('HeyGen create avatar video error:', error.response?.data || error.message);
       res.status(error.response?.status || 500).json({
         message: error.response?.data?.message || 'Failed to create avatar video'
-      });
-    }
-  }
-
-  // Create WebM video
-  async createWebMVideo(req, res) {
-    try {
-      const {
-        avatar_pose_id = 'Vanessa-invest-20220722',
-        avatar_style = 'normal',
-        input_text,
-        voice_id,
-        input_audio,
-        dimension
-      } = req.body;
-
-      if ((!input_text || !voice_id) && !input_audio) {
-        return res.status(400).json({
-          message: 'Either (input_text and voice_id) or input_audio must be provided'
-        });
-      }
-
-      const response = await this.apiClient.post('/v1/video.webm', {
-        avatar_pose_id,
-        avatar_style,
-        input_text,
-        voice_id,
-        input_audio,
-        dimension
-      });
-
-      res.json(response.data);
-    } catch (error) {
-      logger.error('HeyGen create WebM video error:', error.response?.data || error.message);
-      res.status(error.response?.status || 500).json({
-        message: error.response?.data?.message || 'Failed to create WebM video'
       });
     }
   }
@@ -169,6 +154,19 @@ class HeyGenController {
       logger.error('HeyGen delete video error:', error.response?.data || error.message);
       res.status(error.response?.status || 500).json({
         message: error.response?.data?.message || 'Failed to delete video'
+      });
+    }
+  }
+
+  // Generate text to speech
+  async generateTTS(req, res) {
+    try {
+      const response = await this.apiClient.post('/v2/tts', req.body);
+      res.json(response.data);
+    } catch (error) {
+      logger.error('HeyGen TTS error:', error.response?.data || error.message);
+      res.status(error.response?.status || 500).json({
+        message: error.response?.data?.message || 'Failed to generate text to speech'
       });
     }
   }
