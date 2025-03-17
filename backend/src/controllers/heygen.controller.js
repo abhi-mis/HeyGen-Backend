@@ -15,6 +15,101 @@ class HeyGenController {
         'Content-Type': 'application/json'
       }
     });
+
+    // Separate client for upload endpoint
+    this.uploadClient = axios.create({
+      baseURL: 'https://upload.heygen.com',
+      headers: {
+        'x-api-key': process.env.HEYGEN_API_KEY
+      }
+    });
+  }
+
+  // Upload talking photo
+  async uploadTalkingPhoto(req, res) {
+    try {
+      if (!req.file) {
+        return res.status(400).json({
+          message: 'No image file provided'
+        });
+      }
+
+      // Validate content type
+      const contentType = req.file.mimetype;
+      if (contentType !== 'image/jpeg' && contentType !== 'image/png') {
+        return res.status(400).json({
+          message: 'Invalid file type. Only JPEG and PNG files are supported.'
+        });
+      }
+
+      const response = await this.uploadClient.post('/v1/talking_photo', req.file.buffer, {
+        headers: {
+          'Content-Type': contentType
+        }
+      });
+
+      res.json({
+        ...response.data,
+        message: 'Photo uploaded successfully'
+      });
+    } catch (error) {
+      logger.error('HeyGen upload talking photo error:', error.response?.data || error.message);
+      res.status(error.response?.status || 500).json({
+        message: error.response?.data?.message || 'Failed to upload talking photo'
+      });
+    }
+  }
+
+  // Create talking photo video
+  async createTalkingPhotoVideo(req, res) {
+    try {
+      const {
+        talking_photo_id,
+        input_text,
+        voice_id,
+        background_type = 'color',
+        background_value = '#FAFAFA',
+        title
+      } = req.body;
+
+      // Validate required fields
+      if (!talking_photo_id || !input_text || !voice_id || !title) {
+        return res.status(400).json({
+          message: 'Missing required fields: talking_photo_id, input_text, voice_id, and title are required'
+        });
+      }
+
+      const requestBody = {
+        title,
+        video_inputs: [{
+          character: {
+            type: 'talking_photo',
+            talking_photo_id
+          },
+          voice: {
+            type: 'text',
+            input_text,
+            voice_id
+          },
+          background: {
+            type: background_type,
+            value: background_value
+          }
+        }]
+      };
+
+      const response = await this.apiClient.post('/v2/video/generate', requestBody);
+
+      res.json({
+        ...response.data,
+        message: 'Talking photo video creation started successfully'
+      });
+    } catch (error) {
+      logger.error('HeyGen create talking photo video error:', error.response?.data || error.message);
+      res.status(error.response?.status || 500).json({
+        message: error.response?.data?.message || 'Failed to create talking photo video'
+      });
+    }
   }
 
   // Create translated video
