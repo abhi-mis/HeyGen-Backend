@@ -1,103 +1,31 @@
 const axios = require('axios');
+const logger = require('../utils/logger');
 
 class HeyGenController {
   constructor() {
-    this.API_KEY = 'Nzg5NWRhNDkzODJjNGIwYzhjOWJjZTBhMTE1Zjg3ZWEtMTczNDYwNTU4NQ==';
+    if (!process.env.HEYGEN_API_KEY) {
+      throw new Error('HEYGEN_API_KEY is required');
+    }
 
     this.apiClient = axios.create({
       baseURL: 'https://api.heygen.com',
       headers: {
-        'X-API-KEY': this.API_KEY,
+        'x-api-key': process.env.HEYGEN_API_KEY,
         'accept': 'application/json',
         'Content-Type': 'application/json'
       }
     });
-
-    this.uploadClient = axios.create({
-      baseURL: 'https://upload.heygen.com',
-      headers: {
-        'X-API-KEY': this.API_KEY
-      }
-    });
   }
 
-  async uploadTalkingPhoto(file) {
+  // Create translated video
+  async createTranslatedVideo(req, res) {
     try {
-      if (!file) {
-        throw new Error('No image file provided');
-      }
-
-      // Validate content type
-      if (!['image/jpeg', 'image/png'].includes(file.type)) {
-        throw new Error('Invalid file type. Only JPEG and PNG files are supported.');
-      }
-
-      const formData = new FormData();
-      formData.append('file', file);
-
-      const response = await this.uploadClient.post('/v1/talking_photo', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        }
-      });
-
-      return {
-        ...response.data,
-        message: 'Photo uploaded successfully'
-      };
-    } catch (error) {
-      console.error('HeyGen upload talking photo error:', error.response?.data || error.message);
-      throw new Error(`Failed to upload talking photo: ${error.response?.data?.message || error.message}`);
-    }
-  }
-
-  async createTalkingPhotoVideo({
-    talking_photo_id,
-    input_text,
-    voice_id,
-    background_type = 'color',
-    background_value = '#FAFAFA',
-    title
-  }) {
-    try {
-      if (!talking_photo_id || !input_text || !voice_id || !title) {
-        throw new Error('Missing required fields: talking_photo_id, input_text, voice_id, and title are required');
-      }
-
-      const requestBody = {
-        title,
-        video_inputs: [{
-          character: {
-            type: 'talking_photo',
-            talking_photo_id
-          },
-          voice: {
-            type: 'text',
-            input_text,
-            voice_id
-          },
-          background: {
-            type: background_type,
-            value: background_value
-          }
-        }]
-      };
-
-      const response = await this.apiClient.post('/v2/video/generate', requestBody);
-      return {
-        ...response.data,
-        message: 'Talking photo video creation started successfully'
-      };
-    } catch (error) {
-      console.error('HeyGen create talking photo video error:', error.response?.data || error.message);
-      throw new Error(`Failed to create talking photo video: ${error.response?.data?.message || error.message}`);
-    }
-  }
-
-  async createTranslatedVideo({ video_url, output_language, title, callback_url }) {
-    try {
+      const { video_url, output_language, title } = req.body;
+      
       if (!video_url || !output_language || !title) {
-        throw new Error('Missing required fields: video_url, output_language, and title are required');
+        return res.status(400).json({ 
+          message: 'Missing required fields: video_url, output_language, and title are required' 
+        });
       }
 
       const response = await this.apiClient.post('/v2/video_translate', {
@@ -106,107 +34,140 @@ class HeyGenController {
         title,
         translate_audio_only: false,
         enable_dynamic_duration: true,
-        callback_url
+        callback_url: `${process.env.API_URL}/webhooks/heygen`
       });
 
-      return response.data;
+      res.json(response.data);
     } catch (error) {
-      console.error('HeyGen create translated video error:', error.response?.data || error.message);
+      logger.error('HeyGen create translated video error:', error.response?.data || error.message);
+      
       if (error.response?.status === 404) {
-        throw new Error('The video URL could not be accessed. Please ensure it is publicly accessible.');
+        return res.status(404).json({ 
+          message: 'The video URL could not be accessed. Please ensure it is publicly accessible.'
+        });
       }
-      throw new Error(`Failed to process video request: ${error.response?.data?.message || error.message}`);
+      
+      res.status(error.response?.status || 500).json({ 
+        message: error.response?.data?.message || 'Failed to process video request'
+      });
     }
   }
 
-  async listAvatars() {
+  // List available avatars
+  async listAvatars(req, res) {
     try {
       const response = await this.apiClient.get('/v2/avatars');
-      return response.data;
+      res.json(response.data);
     } catch (error) {
-      console.error('HeyGen list avatars error:', error.response?.data || error.message);
-      throw new Error(`Failed to fetch avatars: ${error.response?.data?.message || error.message}`);
+      logger.error('HeyGen list avatars error:', error.response?.data || error.message);
+      res.status(error.response?.status || 500).json({
+        message: error.response?.data?.message || 'Failed to fetch avatars'
+      });
     }
   }
 
-  async listVoices() {
+  // List available voices
+  async listVoices(req, res) {
     try {
       const response = await this.apiClient.get('/v2/voices');
-      return response.data;
+      res.json(response.data);
     } catch (error) {
-      console.error('HeyGen list voices error:', error.response?.data || error.message);
-      throw new Error(`Failed to fetch voices: ${error.response?.data?.message || error.message}`);
+      logger.error('HeyGen list voices error:', error.response?.data || error.message);
+      res.status(error.response?.status || 500).json({
+        message: error.response?.data?.message || 'Failed to fetch voices'
+      });
     }
   }
 
-  async createAvatarVideo({
-    avatar_pose_id,
-    input_text,
-    voice_id,
-    title,
-    dimension = { width: 1280, height: 720 },
-    avatar_style = 'normal'
-  }) {
+  // Create avatar video
+  async createAvatarVideo(req, res) {
     try {
+      const { 
+        avatar_pose_id,
+        input_text,
+        voice_id,
+        title,
+        dimension = { width: 1280, height: 720 },
+        avatar_style = 'normal'
+      } = req.body;
+
+      // Validate required fields
       if (!avatar_pose_id || !input_text || !voice_id || !title) {
-        throw new Error('Missing required fields: avatar_pose_id, input_text, voice_id, and title are required');
+        return res.status(400).json({
+          message: 'Missing required fields: avatar_pose_id, input_text, voice_id, and title are required'
+        });
       }
 
+      // Format the request body according to HeyGen V2 API
       const requestBody = {
         title,
         video_inputs: [{
           character: {
-            type: 'avatar',
+            type: "avatar",
             avatar_id: avatar_pose_id,
-            avatar_style
+            avatar_style: avatar_style
           },
           voice: {
-            type: 'text',
-            voice_id,
-            input_text
+            type: "text",
+            voice_id: voice_id,
+            input_text: input_text
           }
         }],
         dimension
       };
 
       const response = await this.apiClient.post('/v2/video/generate', requestBody);
-      return {
+
+      res.json({
         ...response.data,
         message: 'Avatar video creation started successfully'
-      };
+      });
     } catch (error) {
-      console.error('HeyGen create avatar video error:', error.response?.data || error.message);
-      throw new Error(`Failed to create avatar video: ${error.response?.data?.message || error.message}`);
+      logger.error('HeyGen create avatar video error:', error.response?.data || error.message);
+      res.status(error.response?.status || 500).json({
+        message: error.response?.data?.message || 'Failed to create avatar video'
+      });
     }
   }
 
-  async getVideoStatus(videoId) {
+  // Get video status
+  async getVideoStatus(req, res) {
     try {
+      const { videoId } = req.params;
       const response = await this.apiClient.get(`/v1/video_status.get?video_id=${videoId}`);
-      return response.data;
+      res.json(response.data);
     } catch (error) {
-      console.error('HeyGen get video status error:', error.response?.data || error.message);
-      throw new Error(`Failed to get video status: ${error.response?.data?.message || error.message}`);
+      logger.error('HeyGen get video status error:', error.response?.data || error.message);
+      res.status(error.response?.status || 500).json({
+        message: error.response?.data?.message || 'Failed to get video status'
+      });
     }
   }
 
-  async deleteVideo(videoId) {
+  // Delete video
+  async deleteVideo(req, res) {
     try {
+      const { videoId } = req.params;
       const response = await this.apiClient.delete(`/v1/video.delete?video_id=${videoId}`);
-      return response.data;
+      res.json(response.data);
     } catch (error) {
-      console.error('HeyGen delete video error:', error.response?.data || error.message);
-      throw new Error(`Failed to delete video: ${error.response?.data?.message || error.message}`);
+      logger.error('HeyGen delete video error:', error.response?.data || error.message);
+      res.status(error.response?.status || 500).json({
+        message: error.response?.data?.message || 'Failed to delete video'
+      });
     }
   }
 
-  async generateTTS(params) {
+  // Generate text to speech
+  async generateTTS(req, res) {
     try {
-      const response = await this.apiClient.post('/v2/tts', params);
-      return response.data;
+      const response = await this.apiClient.post('/v2/tts', req.body);
+      res.json(response.data);
     } catch (error) {
-      console.error('HeyGen TTS error:', error.response?.data || error.message);
-      throw new Error(`Failed to generate text to speech: ${error.response?.data?.message || error.message}`);
+      logger.error('HeyGen TTS error:', error.response?.data || error.message);
+      res.status(error.response?.status || 500).json({
+        message: error.response?.data?.message || 'Failed to generate text to speech'
+      });
     }
   }
 }
